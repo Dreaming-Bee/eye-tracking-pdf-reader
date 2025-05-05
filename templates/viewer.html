@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reading {{ pdf_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="viewer-container">
+        <div class="controls">
+            <a href="{{ url_for('index') }}" class="btn">Back to Home</a>
+            <button id="startTracking" class="btn">Start Eye Tracking</button>
+            <button id="stopTracking" class="btn btn-danger">Stop Eye Tracking</button>
+            <div class="status">
+                <span id="trackingStatus">Eye Tracking: Off</span>
+            </div>
+        </div>
+        
+        <div class="pdf-viewer" id="pdfViewer">
+            <div class="pdf-content" id="pdfContent">
+                {% for page_num in range(1, total_pages + 1) %}
+                    <div class="pdf-page">
+                        <img src="{{ url_for('static', filename='pdfs/page_' + page_num|string + '.png') }}" alt="Page {{ page_num }}">
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const startButton = document.getElementById('startTracking');
+            const stopButton = document.getElementById('stopTracking');
+            const statusSpan = document.getElementById('trackingStatus');
+            const pdfContent = document.getElementById('pdfContent');
+            const pdfViewer = document.getElementById('pdfViewer');
+            
+            let isTracking = false;
+            let scrollInterval;
+            
+            startButton.addEventListener('click', function() {
+                if (!isTracking) {
+                    fetch('/start_eye_tracking', {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        isTracking = true;
+                        statusSpan.textContent = 'Eye Tracking: On';
+                        statusSpan.classList.add('active');
+                        
+                        // Start polling for scroll position
+                        scrollInterval = setInterval(updateScrollPosition, 100);
+                    });
+                }
+            });
+            
+            stopButton.addEventListener('click', function() {
+                if (isTracking) {
+                    fetch('/stop_eye_tracking', {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        isTracking = false;
+                        statusSpan.textContent = 'Eye Tracking: Off';
+                        statusSpan.classList.remove('active');
+                        
+                        // Stop polling
+                        clearInterval(scrollInterval);
+                    });
+                }
+            });
+            
+            function updateScrollPosition() {
+                fetch('/get_scroll_position')
+                .then(response => response.json())
+                .then(data => {
+                    // Calculate scroll position as percentage of the container
+                    const scrollPercentage = data.scroll_position;
+                    const maxScroll = pdfContent.scrollHeight - pdfViewer.clientHeight;
+                    const scrollValue = (maxScroll * scrollPercentage) / 100;
+                    
+                    // Smooth scroll
+                    pdfViewer.scrollTo({
+                        top: scrollValue,
+                        behavior: 'smooth'
+                    });
+                });
+            }
+        });
+    </script>
+</body>
+</html>
