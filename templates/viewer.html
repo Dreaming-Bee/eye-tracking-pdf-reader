@@ -16,7 +16,24 @@
                 <span id="trackingStatus">Eye Tracking: Off</span>
             </div>
         </div>
-        
+
+        <!-- Calibration UI (initially hidden) -->
+        <div id="calibrationUI" class="calibration-container" style="display: none;">
+            <div class="calibration-content">
+                <h2>Eye Tracking Calibration</h2>
+                <p>Please read the following paragraph while keeping your head relatively still:</p>
+                <div class="calibration-text">
+                    <p>The quick brown fox jumps over the lazy dog. This sentence contains every letter in the English alphabet.
+                    Reading this paragraph helps calibrate the eye tracking system to your natural reading patterns.
+                    Try to read at your normal pace and maintain a comfortable posture.</p>
+                </div>
+                <button id="calibrateButton" class="btn">Calibrate</button>
+                <div class="calibration-status">
+                    <span id="calibrationStatus">Ready to calibrate</span>
+                </div>
+            </div>
+        </div>
+
         <div class="pdf-viewer" id="pdfViewer">
             <div class="pdf-content" id="pdfContent">
                 {% for page_num in range(1, total_pages + 1) %}
@@ -35,10 +52,15 @@
             const statusSpan = document.getElementById('trackingStatus');
             const pdfContent = document.getElementById('pdfContent');
             const pdfViewer = document.getElementById('pdfViewer');
-            
+            const calibrationUI = document.getElementById('calibrationUI');
+            const calibrateButton = document.getElementById('calibrateButton');
+            const calibrationStatus = document.getElementById('calibrationStatus');
+
             let isTracking = false;
+            let isCalibrating = false;
             let scrollInterval;
-            
+            let calibrationCheckInterval;
+
             startButton.addEventListener('click', function() {
                 if (!isTracking) {
                     fetch('/start_eye_tracking', {
@@ -49,13 +71,21 @@
                         isTracking = true;
                         statusSpan.textContent = 'Eye Tracking: On';
                         statusSpan.classList.add('active');
-                        
-                        // Start polling for scroll position
-                        scrollInterval = setInterval(updateScrollPosition, 100);
+
+                        // Check if calibration is required
+                        if (data.calibration_required) {
+                            // Show calibration UI
+                            calibrationUI.style.display = 'block';
+                            pdfViewer.style.display = 'none';
+                            calibrationStatus.textContent = 'Ready to calibrate';
+                        } else {
+                            // Start polling for scroll position
+                            scrollInterval = setInterval(updateScrollPosition, 100);
+                        }
                     });
                 }
             });
-            
+
             stopButton.addEventListener('click', function() {
                 if (isTracking) {
                     fetch('/stop_eye_tracking', {
@@ -64,15 +94,61 @@
                     .then(response => response.json())
                     .then(data => {
                         isTracking = false;
+                        isCalibrating = false;
                         statusSpan.textContent = 'Eye Tracking: Off';
                         statusSpan.classList.remove('active');
-                        
+
+                        // Hide calibration UI if visible
+                        calibrationUI.style.display = 'none';
+                        pdfViewer.style.display = 'block';
+
                         // Stop polling
                         clearInterval(scrollInterval);
+                        if (calibrationCheckInterval) {
+                            clearInterval(calibrationCheckInterval);
+                        }
                     });
                 }
             });
-            
+
+            calibrateButton.addEventListener('click', function() {
+                if (isTracking && !isCalibrating) {
+                    isCalibrating = true;
+                    calibrationStatus.textContent = 'Calibrating... Please read the text above';
+
+                    // Start calibration process
+                    fetch('/start_calibration', {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        // Start checking calibration status
+                        calibrationCheckInterval = setInterval(checkCalibrationStatus, 500);
+                    });
+                }
+            });
+
+            function checkCalibrationStatus() {
+                fetch('/check_calibration_status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.calibration_complete) {
+                        // Calibration is complete
+                        clearInterval(calibrationCheckInterval);
+                        calibrationStatus.textContent = 'Calibration complete!';
+
+                        // Hide calibration UI and show PDF viewer after a short delay
+                        setTimeout(() => {
+                            calibrationUI.style.display = 'none';
+                            pdfViewer.style.display = 'block';
+
+                            // Start polling for scroll position
+                            scrollInterval = setInterval(updateScrollPosition, 100);
+                        }, 1500);
+                    }
+                });
+            }
+
             function updateScrollPosition() {
                 fetch('/get_scroll_position')
                 .then(response => response.json())
@@ -81,7 +157,7 @@
                     const scrollPercentage = data.scroll_position;
                     const maxScroll = pdfContent.scrollHeight - pdfViewer.clientHeight;
                     const scrollValue = (maxScroll * scrollPercentage) / 100;
-                    
+
                     // Smooth scroll
                     pdfViewer.scrollTo({
                         top: scrollValue,
